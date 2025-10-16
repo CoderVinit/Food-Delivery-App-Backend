@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: food-delivery-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: food-delivery-redisinsight
+    ports:
+      - "5541:5540"
+    volumes:
+      - redisinsight_data:/db
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+  redisinsight_data:
+    driver: local
