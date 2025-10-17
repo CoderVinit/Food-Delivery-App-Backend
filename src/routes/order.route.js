@@ -1,6 +1,6 @@
 import express from 'express'
 import { authMiddleware, authorizeRoles } from '../middleware/authMiddleware.js';
-import { acceptOrder, getAssignmentsOfDeliveryBoy, getMyOrders, getOwnerOrders, placeOrder, updateOrderStatus } from '../controllers/order.controller.js';
+import { acceptOrder, currentOrder, getAssignmentsOfDeliveryBoy, getMyOrders, getOwnerOrders, placeOrder, updateOrderStatus } from '../controllers/order.controller.js';
 
 
 const router = express.Router();
@@ -12,6 +12,7 @@ router.get("/owner-orders", authMiddleware,authorizeRoles("owner"), getOwnerOrde
 router.post("/update-order-status/:orderId/:shopOrderId", authMiddleware,authorizeRoles("owner"), updateOrderStatus);
 router.get("/get-assignment",authMiddleware,authorizeRoles("deliveryBoy"), getAssignmentsOfDeliveryBoy);
 router.post("/accept-order/:assignmentId",authMiddleware,authorizeRoles("deliveryBoy"), acceptOrder);
+router.get("/current-order", authMiddleware, authorizeRoles("deliveryBoy"), currentOrder);
 
 
 

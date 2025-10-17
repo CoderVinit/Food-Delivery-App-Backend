@@ -303,3 +303,37 @@ export const acceptOrder = async(req, res) => {
     res.status(500).json({success: false, message: "Internal server error"});
   }
 };
+
+
+
+
+export const currentOrder = async(req, res) => {
+  try {
+    const deliveryBoyId = req.userId;
+    const assignment = await DeliveryAssignment.findOne({assignedTo: deliveryBoyId, status: "assigned"})
+    if(!assignment){
+      return res.status(404).json({success: false, message: "No current assignment found"});
+    }
+
+
+    const order = await Order.findById(assignment.order)
+    .populate("shopOrder.shop", "name address")
+    .populate("shopOrder.shopOrderItems.item", "name image price")
+    .populate("userId", "fullName email mobile")
+
+
+    const shopOrder = order.shopOrder.find(so=>so._id.toString()===assignment.shopOrderId.toString());
+    order.shopOrder = [shopOrder]; // Return only the relevant shopOrder for this delivery boy
+    
+
+    if(!order){
+      return res.status(404).json({success: false, message: "Order not found"});
+    }
+
+    return res.status(200).json({success: true, data:order});
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({success: false, message: "Internal server error"});
+  }
+}
