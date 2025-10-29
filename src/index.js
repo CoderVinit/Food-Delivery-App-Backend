@@ -33,6 +33,7 @@ app.use(cors({
             "http://localhost:5173",
             "http://localhost:3000",
             "http://localhost:3001",
+            "https://food-delivery-app-frontend-4.onrender.com",
             process.env.FRONTEND_URL, // Add your deployed frontend URL to .env
             // Add more domains as needed
         ].filter(Boolean); // Remove undefined values
