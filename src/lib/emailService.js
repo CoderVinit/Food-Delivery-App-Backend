@@ -87,6 +87,16 @@ export class EmailService {
         );
     }
 
+    static async sendOrderDeliveredEmail(receiver, otp) {
+        return await this.addEmailJob(
+            receiver,
+            otp,
+            'Order Delivered - OTP Verification',
+            'order-delivered',
+            { priority: 8 }
+        );
+    }
+
     /**
      * Send delayed email (for reminders, follow-ups, etc.)
      */

@@ -7,7 +7,7 @@ const itemSchema = new mongoose.Schema(
         price:{type:Number,min:0,required:true},
         category:{type:String,enum:["Snacks","Main Course","Dessert","Beverages","Pizza","Burger","Sandwich","South Indian","North Indian","Chinese","Fast Food","Others"],required:true},
         shop:{type:mongoose.Schema.Types.ObjectId,ref:"Shop"},
-        foodType:{type:String,enum:["Veg","Non-Veg"],required:true},
+        foodType:{type:String,enum:["veg","non-veg"],required:true},
         rating:{
             average:{type:Number,default:0},
             count:{type:Number,default:0}
