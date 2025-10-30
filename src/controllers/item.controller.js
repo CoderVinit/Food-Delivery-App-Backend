@@ -234,7 +234,8 @@ export const getAllItemsOfCity = async(req,res)=>{
             });
         }
         const shopIds = shops.map(shop => shop._id);
-        const allItems = await Item.find({shop:{$in: shopIds}});
+        const allItems = await Item.find({shop:{$in: shopIds}}).populate('shop');
+        console.log(allItems)
         res.status(200).json({
             success: true,
             data: allItems
@@ -244,6 +245,37 @@ export const getAllItemsOfCity = async(req,res)=>{
         res.status(500).json({
             success: false,
             message: "Failed to fetch items by city"
+        });
+    }
+}
+
+
+export const getAllItems = async(req,res)=>{
+    try {
+        let pagination = {};
+        const { page = 1, limit = 5 } = req.query;
+        pagination.skip = (page - 1) * limit;
+        pagination.limit = limit;
+        pagination.total = await Item.countDocuments();
+
+        const allItems = await Item.find().populate('shop')
+            .skip(pagination.skip)
+            .limit(pagination.limit);
+        res.status(200).json({
+            success: true,
+            data: allItems,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                total: pagination.total,
+                totalPages: Math.ceil(pagination.total / limit)
+            }
+        });
+    } catch (error) {
+        console.error("Error fetching all items:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch all items"
         });
     }
 }
