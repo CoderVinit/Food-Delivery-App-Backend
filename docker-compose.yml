@@ -8,6 +8,8 @@ services:
       - redis_data:/data
     command: redis-server --appendonly yes
     restart: unless-stopped
+    networks:
+      - foodnet
 
   redisinsight:
     image: redis/redisinsight:latest
@@ -17,9 +19,54 @@ services:
     volumes:
       - redisinsight_data:/db
     restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - foodnet
+
+  mongodb:
+    image: mongo:6.0
+    container_name: food-delivery-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: Vinit@7521
+      MONGO_INITDB_DATABASE: fooddeliverydb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    restart: unless-stopped
+    networks:
+      - foodnet
+
+  backend:
+    image: node:20-alpine
+    container_name: food-delivery-backend
+    working_dir: /app
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - ./.env
+    ports:
+      - "8081:8080"
+    depends_on:
+      - mongodb
+      - redis
+    command: sh -c "npm install && npm run dev"
+    restart: unless-stopped
+    networks:
+      - foodnet
+
+
+networks:
+  foodnet:
+    driver: bridge
 
 volumes:
   redis_data:
     driver: local
   redisinsight_data:
+    driver: local
+  mongodb_data:
     driver: local
