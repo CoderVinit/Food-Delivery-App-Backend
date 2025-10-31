@@ -3,15 +3,20 @@ import nodemailer from "nodemailer";
 export const sendMail = async (receiver, otp, subject = "For Password Reset", template = "password-reset") => {
   try {
     console.log(`Sending email to: ${receiver}, Subject: ${subject}`);
-    
+    const smtpPort = Number(process.env.SMTP_PORT) || 587;
     const transporter = nodemailer.createTransport({
         host: process.env.SMTP_HOST,
-        port: process.env.SMTP_PORT,
-        secure: false,
+        port: smtpPort,
+        secure: smtpPort === 465, // true for 465, false for 587/STARTTLS
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS,
         },
+        // Prevent long hangs in cloud environments
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+        // pool: true, // enable if you send lots of mails
     });
 
     // Different email templates
@@ -87,7 +92,7 @@ export const sendMail = async (receiver, otp, subject = "For Password Reset", te
     console.log("Message sent: %s", info.messageId);
     return { success: true, message: "Email sent successfully", messageId: info.messageId };
   } catch (error) {
-    console.error("Error sending email:", error);
-    return { success: false, message: "Error sending email: " + error.message };
+        console.error("Error sending email:", error?.response || error?.message || error);
+        return { success: false, message: "Error sending email: " + (error?.response?.message || error?.message) };
   }
 };
