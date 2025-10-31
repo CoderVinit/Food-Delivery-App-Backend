@@ -1,4 +1,8 @@
 import { emailQueue } from './emailQueue.js';
+import { sendMail } from './sendMail.js';
+
+const QUEUE_ENABLED = !!(process.env.REDIS_HOST || process.env.REDIS_URL || process.env.REDIS_PORT);
+const QUEUE_ADD_TIMEOUT_MS = 1000; // don't let API wait on Redis
 
 /**
  * Email Service for adding email jobs to BullMQ queue
@@ -30,13 +34,35 @@ export class EmailService {
                 ...options
             };
 
-            const job = await emailQueue.add('send-email', jobData, jobOptions);
-            
-            console.log(`📧 Email job added to queue: ${job.id} for ${receiver}`);
-            
+            if (!QUEUE_ENABLED) {
+                // Queue not configured in environment: send in background without blocking
+                setImmediate(async () => {
+                    try {
+                        await sendMail(receiver, otp, subject, template);
+                    } catch (e) {
+                        console.error('Background email send failed:', e?.message || e);
+                    }
+                });
+                return {
+                    success: true,
+                    jobId: null,
+                    message: 'Email dispatch scheduled (queue disabled)'
+                };
+            }
+
+            const addPromise = emailQueue.add('send-email', jobData, jobOptions);
+            const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve('timeout'), QUEUE_ADD_TIMEOUT_MS));
+            const result = await Promise.race([addPromise, timeoutPromise]);
+
+            if (result === 'timeout') {
+                console.warn('Queue add timed out, proceeding without blocking');
+                return { success: true, jobId: null, message: 'Email job scheduled (timeout fallback)' };
+            }
+
+            console.log(`📧 Email job added to queue: ${result.id} for ${receiver}`);
             return {
                 success: true,
-                jobId: job.id,
+                jobId: result.id,
                 message: 'Email job added to queue successfully'
             };
         } catch (error) {

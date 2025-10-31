@@ -498,10 +498,11 @@ export const markOrderAsDelivered = async (req, res) => {
     await user.save();
 
 
-    await EmailService.sendOrderDeliveredEmail(
-      assignments.order.userId.email,
-      otp
-    );
+    // Fire-and-forget email dispatch so this API doesn't block on SMTP/Redis
+    EmailService.sendOrderDeliveredEmail(assignments.order.userId.email, otp)
+      .then((r)=> console.log('Email enqueue result:', r?.message || r))
+      .catch((e)=> console.error('Email enqueue failed:', e?.message || e));
+
     res.status(200).json({success:true,message:"Otp sent successfully"});
   } catch (error) {
     console.error(error);
