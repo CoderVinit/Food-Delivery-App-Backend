@@ -31,7 +31,24 @@ const shopOrderSchema = new mongoose.Schema({
 const orderSchema = new mongoose.Schema(
     {
         userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User'},
+        // Payment information
         paymentMethod:{ type: String, enum: ['cod', 'online'], required: true },
+        paymentStatus: { type: String, enum: ['pending', 'paid', 'failed', 'refunded'], default: 'pending' },
+        payment: {
+            provider: { type: String, enum: ['razorpay', 'other'], default: 'razorpay' },
+            orderId: { type: String },
+            paymentId: { type: String },
+            signature: { type: String },
+            currency: { type: String },
+            amount: { type: Number }, // store in paise for gateways consistency
+            receipt: { type: String },
+        },
+        // Overall order status (aggregated from shop orders but stored for quick lookups)
+        status: {
+            type: String,
+            enum: ['pending', 'confirmed', 'preparing', 'out-for-delivery', 'delivered', 'cancelled'],
+            default: 'pending'
+        },
         deliveryAddress: { text: String, latitude: Number, longitude: Number },
         totalAmount: { type: Number, required: true },
         shopOrder: [shopOrderSchema],

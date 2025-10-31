@@ -56,7 +56,8 @@ export const availableDeliveryBoys = async(req, res) => {
                 message: "Longitude and latitude are required"
             });
         }
-        const deliveryBoys = await User.find({
+        // Step 1: find nearby delivery boys within 5km; fallback to 20km if none
+        let deliveryBoys = await User.find({
             role: "deliveryBoy",
             location: {
                 $near: {
@@ -65,21 +66,26 @@ export const availableDeliveryBoys = async(req, res) => {
                 }
             }
         }).select("fullName email location mobile");
-        console.log("Nearby Delivery Boys:", deliveryBoys); 
-        let map = new Map();
+        if (!deliveryBoys || deliveryBoys.length === 0) {
+            deliveryBoys = await User.find({
+                role: "deliveryBoy",
+                location: {
+                    $near: {
+                        $geometry: { type: "Point", coordinates: [parseFloat(longitude), parseFloat(latitude)] },
+                        $maxDistance: 20000
+                    }
+                }
+            }).select("fullName email location mobile");
+        }
 
-        let deliveryBoyIds = deliveryBoys.map(boy => boy._id.toString());
-
+        // Build busy set: only assignments currently 'assigned' and with valid assignedTo
         const busyDeliveryBoys = new Set();
-        const busyBoys = await DeliveryAssignment.find({status: {$in: ["assigned", "completed"]}});
-        console.log("Busy Delivery Boys:", busyBoys);
+        const busyBoys = await DeliveryAssignment.find({ status: { $in: ["assigned", "picked-up", "en-route"] } }).select("assignedTo");
         busyBoys.forEach(assignment => {
-            busyDeliveryBoys.add(assignment.assignedTo.toString());
+            if (assignment.assignedTo) busyDeliveryBoys.add(assignment.assignedTo.toString());
         });
 
-        console.log("Busy Delivery Boys IDs:", Array.from(busyDeliveryBoys));
         const availableBoys = deliveryBoys.filter(boy => !busyDeliveryBoys.has(boy._id.toString()));
-        console.log("Available Delivery Boys:", availableBoys);
 
         res.status(200).json({
             success: true,

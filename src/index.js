@@ -11,6 +11,7 @@ import queueRouter from "./routes/queue.routes.js";
 import shopRouter from "./routes/shop.route.js";
 import itemRouter from "./routes/item.route.js";
 import orderRouter from "./routes/order.route.js";
+import razorpayRouter from "./routes/razorpay.routes.js";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import path from "path";
@@ -100,6 +101,7 @@ app.use('/api/queue', queueRouter);
 app.use("/api/shop",shopRouter)
 app.use("/api/item",itemRouter)
 app.use("/api/order",orderRouter)
+app.use("/api/razorpay", razorpayRouter);
 
 app.listen(PORT, () => {
     connectDB();

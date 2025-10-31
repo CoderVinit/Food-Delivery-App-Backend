@@ -11,10 +11,14 @@ const deliveryAssignmentSchema = new mongoose.Schema(
         assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
         status:{
             type:String,
-            enum:["broadcasted","completed","assigned"],
+            enum:["broadcasted","assigned","picked-up","en-route","delivered","completed","cancelled"],
             default:"broadcasted"
         },
         acceptedAt: { type: Date, default: null },
+        pickedUpAt: { type: Date, default: null },
+        deliveredAt: { type: Date, default: null },
+        completedAt: { type: Date, default: null },
+        cancelReason: { type: String, default: null },
 
     },{ timestamps: true }
 )

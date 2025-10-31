@@ -1,28 +1,14 @@
-/*
- * Order Controller
- * 
- * Delivery Boy Lifecycle:
- * 1. When order status changes to "out-for-delivery", nearby delivery boys are found and a DeliveryAssignment is created
- * 2. Assignment status starts as "broadcasted" and is sent to available delivery boys
- * 3. When a delivery boy accepts, assignment status changes to "assigned" and assignedTo is set
- * 4. When order is delivered and OTP verified, assignment status changes to "completed"
- * 5. Completed assignments free the delivery boy for new assignments
- * 
- * Delivery Boy Availability Logic:
- * - Delivery boys with status "assigned" are considered busy
- * - Delivery boys with status "completed" or "broadcasted" are available for new assignments
- */
-
 import EmailService from "../lib/emailService.js";
 import { sendMail } from "../lib/sendMail.js";
 import DeliveryAssignment from "../models/deliveryAssignment.model.js";
 import Order from "../models/order.model.js";
 import Shop from "../models/shop.model.js";
 import User from "../models/user.model.js";
+import crypto from "crypto";
 
 export const placeOrder = async (req, res) => {
   try {
-    const { cartItems, paymentMethod, deliveryAddress, totalAmount } = req.body;
+    const { cartItems, paymentMethod, deliveryAddress, totalAmount, payment } = req.body;
     if (!cartItems || cartItems.length === 0) {
       return res.status(400).json({ success: false, message: "Cart is empty" });
     }
@@ -39,12 +25,17 @@ export const placeOrder = async (req, res) => {
 
     const groupItemsByShop = {};
 
+    // Normalize and group items by shop id (supports shop as id or populated object)
     cartItems.forEach((item) => {
-      const shopId = item.shop;
-      if (!groupItemsByShop[shopId]) {
-        groupItemsByShop[shopId] = [];
+      const shopId = typeof item.shop === "string" ? item.shop : (item.shop?._id || item.shop);
+      if (!shopId) {
+        throw new Error("Invalid cart item: missing shop id");
       }
-      groupItemsByShop[shopId].push(item);
+      const key = shopId.toString();
+      if (!groupItemsByShop[key]) {
+        groupItemsByShop[key] = [];
+      }
+      groupItemsByShop[key].push(item);
     });
 
     const shopOrder = await Promise.all(
@@ -66,7 +57,8 @@ export const placeOrder = async (req, res) => {
           owner: shop.owner._id,
           subtotal: subTotal,
           shopOrderItems: items.map((i) => ({
-            item: i.id,
+            // Support i.id or i._id in payload
+            item: i.id || i._id,
             name: i.name,
             quantity: i.quantity,
             price: i.price,
@@ -77,9 +69,50 @@ export const placeOrder = async (req, res) => {
       })
     );
 
+    // Prepare payment details
+    let paymentStatus = "pending";
+    let paymentDetails = undefined;
+
+    if (paymentMethod === "online") {
+      // Validate razorpay payment details and signature
+      const reqOrderId = payment?.orderId || payment?.razorpay_order_id;
+      const reqPaymentId = payment?.paymentId || payment?.razorpay_payment_id;
+      const reqSignature = payment?.signature || payment?.razorpay_signature;
+      if (!reqOrderId || !reqPaymentId || !reqSignature) {
+        return res.status(400).json({
+          success: false,
+          message: "Payment details are required for online payments",
+        });
+      }
+      const secret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET_KEY;
+      if (!secret) {
+        return res.status(500).json({ success: false, message: "Payment configuration missing" });
+      }
+      const hmac = crypto
+        .createHmac("sha256", secret)
+        .update(`${reqOrderId}|${reqPaymentId}`)
+        .digest("hex");
+      if (hmac !== reqSignature) {
+        return res.status(400).json({ success: false, message: "Invalid payment signature" });
+      }
+
+      paymentStatus = "paid";
+      paymentDetails = {
+        provider: payment?.provider || "razorpay",
+        orderId: reqOrderId,
+        paymentId: reqPaymentId,
+        signature: reqSignature,
+        currency: payment?.currency || "INR",
+        amount: payment?.amount, // expected paise
+        receipt: payment?.receipt,
+      };
+    }
+
     const newOrder = await Order.create({
       userId: req.userId,
       paymentMethod,
+      paymentStatus,
+      payment: paymentDetails,
       deliveryAddress,
       totalAmount,
       shopOrder,
@@ -177,7 +210,8 @@ export const updateOrderStatus = async (req, res) => {
     if (status === "out-for-delivery" && !shopOrder.assignment) {
       const { longitude, latitude } = order.deliveryAddress;
       // Assign delivery person logic here
-      const nearestDeliveryPerson = await User.find({
+      // Try 5km first
+      let nearestDeliveryPerson = await User.find({
         role: "deliveryBoy",
         location: {
           $near: {
@@ -186,12 +220,24 @@ export const updateOrderStatus = async (req, res) => {
           },
         },
       });
+      // Fallback to 20km radius if none found
+      if (!nearestDeliveryPerson || nearestDeliveryPerson.length === 0) {
+        nearestDeliveryPerson = await User.find({
+          role: "deliveryBoy",
+          location: {
+            $near: {
+              $geometry: { type: "Point", coordinates: [longitude, latitude] },
+              $maxDistance: 20000,
+            },
+          },
+        });
+      }
       console.log("Nearest delivery persons:", nearestDeliveryPerson);
       const nearByIds = nearestDeliveryPerson.map((person) => person._id);
       // Find delivery boys who are currently busy (only those with active assignments)
       const busyDeliveryBoys = await DeliveryAssignment.find({
         assignedTo: { $in: nearByIds },
-        status: { $in: ["assigned"] }, // Only consider currently assigned delivery boys as busy
+        status: { $in: ["assigned", "picked-up", "en-route"] }, // Active assignments only
       }).distinct("assignedTo");
       const busySet = new Set(busyDeliveryBoys.map((id) => id.toString()));
 
