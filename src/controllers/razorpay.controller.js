@@ -12,6 +12,9 @@ export const CreateOrder = async (req, res) => {
     }
 
 
+    // Convert amount (rupees) to paise as required by Razorpay
+    const amountInPaise = Math.round(Number(numericAmount) * 100);
+
     // Initialize Razorpay lazily to avoid crashing server if not configured
     const keyId = process.env.RAZORPAY_KEY_ID;
     const keySecret = process.env.RAZORPAY_KEY_SECRET || process.env.RAZORPAY_SECRET_KEY;
@@ -26,7 +29,7 @@ export const CreateOrder = async (req, res) => {
     const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
 
     const options = {
-      amount: amount,
+      amount: amountInPaise,
       currency: "INR",
       receipt: receipt || `receipt_order_${Date.now()}`,
       notes: {
@@ -46,10 +49,12 @@ export const CreateOrder = async (req, res) => {
       order,
     });
   } catch (error) {
-    console.error("Error creating order:", error);
-    res.status(500).json({
+    console.error("Error creating order:", error?.response?.data || error?.message || error);
+    const description = error?.response?.data?.error?.description || error?.message || "Failed to create payment order";
+    const status = error?.status || error?.response?.status || 500;
+    res.status(status).json({
       success: false,
-      message: "Internal Server Error",
+      message: description,
     });
   }
 };
