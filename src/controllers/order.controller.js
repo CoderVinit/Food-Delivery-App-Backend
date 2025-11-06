@@ -5,6 +5,7 @@ import Order from "../models/order.model.js";
 import Shop from "../models/shop.model.js";
 import User from "../models/user.model.js";
 import crypto from "crypto";
+import { getIO } from "../socket/socket.js";
 
 export const placeOrder = async (req, res) => {
   try {
@@ -118,6 +119,18 @@ export const placeOrder = async (req, res) => {
       shopOrder,
     });
 
+    const io = getIO();
+    if (io) {
+      const orderId = newOrder._id.toString();
+      io.to(`user:${req.userId}`).emit("orders:refresh", { scope: "user", orderId });
+      newOrder.shopOrder.forEach((entry) => {
+        const ownerId = entry?.owner?.toString?.() || entry?.owner?._id?.toString?.();
+        if (ownerId) {
+          io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+        }
+      });
+    }
+
     return res.status(201).json({
       success: true,
       message: "Order placed successfully",
@@ -207,6 +220,7 @@ export const updateOrderStatus = async (req, res) => {
     shopOrder.status = status;
 
     let deliveryBoyPayload = [];
+    let deliveryAssignment = null;
     if (status === "out-for-delivery" && !shopOrder.assignment) {
       const { longitude, latitude } = order.deliveryAddress;
       // Assign delivery person logic here
@@ -247,7 +261,7 @@ export const updateOrderStatus = async (req, res) => {
       );
       const candidates = availableBoys.map((b) => b._id);
 
-      const deliveryAssignment = await DeliveryAssignment.create({
+      deliveryAssignment = await DeliveryAssignment.create({
         order: order._id,
         shop: shopOrder.shop,
         shopOrderId: shopOrder._id,
@@ -283,6 +297,73 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     const updatedShopOrder = order.shopOrder.find((o) => o._id == shopOrderId);
+
+    const io = getIO();
+    if (io && updatedShopOrder) {
+      const orderId = order._id.toString();
+      const shopOrderKey = updatedShopOrder._id.toString();
+      const userId = order.userId?._id?.toString() || order.userId?.toString?.();
+      const ownerId = updatedShopOrder.owner?._id?.toString() || updatedShopOrder.owner?.toString?.();
+      const assignedDeliveryId = updatedShopOrder.assignedDeliveryBoy?._id?.toString() || updatedShopOrder.assignedDeliveryBoy?.toString?.();
+      const statusMessages = {
+        pending: "Order placed",
+        preparing: "Order is being prepared",
+        "out-for-delivery": "Order is out for delivery",
+        delivered: "Order delivered",
+        cancelled: "Order cancelled"
+      };
+      const payload = {
+        orderId,
+        shopOrderId: shopOrderKey,
+        status: updatedShopOrder.status,
+        assignmentId: updatedShopOrder.assignment?.toString?.() || null,
+        assignedDeliveryBoy: assignedDeliveryId,
+        message: statusMessages[updatedShopOrder.status] || "Order updated"
+      };
+
+      io.to(`order:${orderId}`).emit("order:status", payload);
+
+      if (userId) {
+        io.to(`user:${userId}`).emit("order:status", payload);
+        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+      }
+
+      if (ownerId) {
+        io.to(`owner:${ownerId}`).emit("order:status", payload);
+        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+      }
+
+      if (assignedDeliveryId) {
+        io.to(`delivery:${assignedDeliveryId}`).emit("order:status", payload);
+        io.to(`delivery:${assignedDeliveryId}`).emit("orders:refresh", { scope: "delivery", orderId });
+      }
+
+      if (deliveryAssignment && deliveryBoyPayload.length) {
+        const assignmentPayload = {
+          orderId,
+          shopOrderId: shopOrderKey,
+          assignmentId: deliveryAssignment._id.toString(),
+          shop: {
+            id: updatedShopOrder.shop?._id?.toString() || updatedShopOrder.shop?.toString?.(),
+            name: updatedShopOrder.shop?.name
+          },
+          deliveryAddress: order.deliveryAddress,
+          subtotal: updatedShopOrder.subtotal,
+          items: updatedShopOrder.shopOrderItems?.map((item) => ({
+            name: item.name,
+            quantity: item.quantity,
+            price: item.price
+          })) || []
+        };
+
+        deliveryBoyPayload.forEach((boy) => {
+          const deliveryBoyId = boy.id?.toString?.() || boy?._id?.toString?.();
+          if (deliveryBoyId) {
+            io.to(`delivery:${deliveryBoyId}`).emit("delivery:assignment", assignmentPayload);
+          }
+        });
+      }
+    }
 
     return res.status(200).json({
       success: true,
@@ -366,10 +447,11 @@ export const acceptOrder = async (req, res) => {
         });
     }
 
+    const previousBroadcast = assignment.broadcastedTo?.map((id) => id.toString()) || [];
     assignment.status = "assigned";
     assignment.assignedTo = deliveryBoyId;
     assignment.acceptedAt = new Date();
-    assignment.broadcastedTo = []; // Clear broadcastedTo list
+    assignment.broadcastedTo = [];
     await assignment.save();
 
     const order = await Order.findById(assignment.order);
@@ -378,6 +460,50 @@ export const acceptOrder = async (req, res) => {
     );
     shopOrder.assignedDeliveryBoy = deliveryBoyId;
     await order.save();
+
+    const io = getIO();
+    if (io) {
+      const orderId = order._id.toString();
+      const shopOrderId = assignment.shopOrderId.toString();
+      const userId = order.userId?._id?.toString() || order.userId?.toString?.();
+      const ownerId = shopOrder.owner?._id?.toString() || shopOrder.owner?.toString?.();
+      const assignedDeliveryId = deliveryBoyId.toString();
+      const payload = {
+        orderId,
+        shopOrderId,
+        status: shopOrder.status,
+        assignmentId: assignment._id.toString(),
+        assignedDeliveryBoy: assignedDeliveryId,
+        message: "Delivery partner assigned"
+      };
+
+      io.to(`order:${orderId}`).emit("order:status", payload);
+
+      if (userId) {
+        io.to(`user:${userId}`).emit("order:status", payload);
+        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+      }
+
+      if (ownerId) {
+        io.to(`owner:${ownerId}`).emit("order:status", payload);
+        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+      }
+
+      if (assignedDeliveryId) {
+        io.to(`delivery:${assignedDeliveryId}`).emit("order:status", payload);
+        io.to(`delivery:${assignedDeliveryId}`).emit("orders:refresh", { scope: "delivery", orderId });
+      }
+
+      previousBroadcast
+        .filter((id) => id !== assignedDeliveryId)
+        .forEach((id) => {
+          io.to(`delivery:${id}`).emit("delivery:assignment-closed", {
+            assignmentId: assignment._id.toString(),
+            orderId,
+            shopOrderId
+          });
+        });
+    }
 
     return res
       .status(200)
@@ -600,6 +726,40 @@ export const orderDelivered = async(req,res)=>{
     user.otp = undefined;
     user.isOtpExpired = undefined;
     await user.save();
+
+    const io = getIO();
+    if (io) {
+      const orderId = order._id.toString();
+      const shopOrderId = shopOrder._id.toString();
+      const userId = order.userId?._id?.toString() || order.userId?.toString?.();
+    const ownerId = shopOrder.owner?._id?.toString() || shopOrder.owner?.toString?.();
+    const deliveryBoyIdStr = deliveryBoyId ? deliveryBoyId.toString() : null;
+      const payload = {
+        orderId,
+        shopOrderId,
+        status: "delivered",
+        assignmentId: null,
+        assignedDeliveryBoy: null,
+        message: "Order delivered"
+      };
+
+      io.to(`order:${orderId}`).emit("order:status", payload);
+
+      if (userId) {
+        io.to(`user:${userId}`).emit("order:status", payload);
+        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+      }
+
+      if (ownerId) {
+        io.to(`owner:${ownerId}`).emit("order:status", payload);
+        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+      }
+
+      if (deliveryBoyIdStr) {
+        io.to(`delivery:${deliveryBoyIdStr}`).emit("order:status", payload);
+        io.to(`delivery:${deliveryBoyIdStr}`).emit("orders:refresh", { scope: "delivery", orderId });
+      }
+    }
 
     return res.status(200).json({success:true,message:"Order marked as delivered successfully"});
   } catch (error) {

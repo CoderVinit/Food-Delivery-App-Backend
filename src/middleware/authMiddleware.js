@@ -22,10 +22,10 @@ export const authMiddleware = (req, res, next) => {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.userId = decoded.userId;
         req.userRole = decoded.role;
-        console.log('Auth success:', { userId: req.userId, role: req.userRole });
+        // console.log('Auth success:', { userId: req.userId, role: req.userRole });
         next();
     } catch (error) {
-        console.log('Token verification failed:', error.message);
+        // console.log('Token verification failed:', error.message);
         return res.status(401).json({ success: false, message: 'Invalid token' });
     }
 };
