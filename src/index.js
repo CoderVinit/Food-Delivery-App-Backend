@@ -38,6 +38,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors({
     origin(origin, callback) {
         if (!origin) return callback(null, true);
+        console.log("CORS origin:", origin);
         if (allowedOrigins.includes(origin)) return callback(null, true);
         const msg = "The CORS policy for this site does not allow access from the specified Origin.";
         return callback(new Error(msg), false);

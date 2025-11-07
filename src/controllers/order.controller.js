@@ -122,11 +122,18 @@ export const placeOrder = async (req, res) => {
     const io = getIO();
     if (io) {
       const orderId = newOrder._id.toString();
-      io.to(`user:${req.userId}`).emit("orders:refresh", { scope: "user", orderId });
+      const userId = req.userId?.toString?.() || req.userId;
+      const userRefreshPayload = { scope: "user", orderId, userId };
+      io.to(`user:${userId}`).emit("orders:refresh", userRefreshPayload);
+      io.emit("orders:refresh", userRefreshPayload);
+
       newOrder.shopOrder.forEach((entry) => {
         const ownerId = entry?.owner?.toString?.() || entry?.owner?._id?.toString?.();
         if (ownerId) {
-          io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+          console.log("Emitting orders:refresh for owner", { ownerId, orderId });
+          const payload = { scope: "owner", orderId, ownerId };
+          io.to(`owner:${ownerId}`).emit("orders:refresh", payload);
+          io.emit("orders:refresh", payload);
         }
       });
     }
@@ -318,6 +325,8 @@ export const updateOrderStatus = async (req, res) => {
         status: updatedShopOrder.status,
         assignmentId: updatedShopOrder.assignment?.toString?.() || null,
         assignedDeliveryBoy: assignedDeliveryId,
+        userId,
+        ownerId,
         message: statusMessages[updatedShopOrder.status] || "Order updated"
       };
 
@@ -325,12 +334,17 @@ export const updateOrderStatus = async (req, res) => {
 
       if (userId) {
         io.to(`user:${userId}`).emit("order:status", payload);
-        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+        const refreshPayload = { scope: "user", orderId, userId };
+        io.to(`user:${userId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (ownerId) {
+        console.log("Emitting order update for owner", { ownerId, orderId, status: updatedShopOrder.status });
         io.to(`owner:${ownerId}`).emit("order:status", payload);
-        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+        const refreshPayload = { scope: "owner", orderId, ownerId };
+        io.to(`owner:${ownerId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (assignedDeliveryId) {
@@ -359,6 +373,7 @@ export const updateOrderStatus = async (req, res) => {
         deliveryBoyPayload.forEach((boy) => {
           const deliveryBoyId = boy.id?.toString?.() || boy?._id?.toString?.();
           if (deliveryBoyId) {
+            console.log("Emitting delivery assignment", { deliveryBoyId, orderId });
             io.to(`delivery:${deliveryBoyId}`).emit("delivery:assignment", assignmentPayload);
           }
         });
@@ -474,6 +489,8 @@ export const acceptOrder = async (req, res) => {
         status: shopOrder.status,
         assignmentId: assignment._id.toString(),
         assignedDeliveryBoy: assignedDeliveryId,
+        userId,
+        ownerId,
         message: "Delivery partner assigned"
       };
 
@@ -481,12 +498,17 @@ export const acceptOrder = async (req, res) => {
 
       if (userId) {
         io.to(`user:${userId}`).emit("order:status", payload);
-        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+        const refreshPayload = { scope: "user", orderId, userId };
+        io.to(`user:${userId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (ownerId) {
+        console.log("Emitting order update for owner after assignment", { ownerId, orderId });
         io.to(`owner:${ownerId}`).emit("order:status", payload);
-        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+        const refreshPayload = { scope: "owner", orderId, ownerId };
+        io.to(`owner:${ownerId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (assignedDeliveryId) {
@@ -497,6 +519,7 @@ export const acceptOrder = async (req, res) => {
       previousBroadcast
         .filter((id) => id !== assignedDeliveryId)
         .forEach((id) => {
+          console.log("Emitting assignment closed", { deliveryBoyId: id, orderId });
           io.to(`delivery:${id}`).emit("delivery:assignment-closed", {
             assignmentId: assignment._id.toString(),
             orderId,
@@ -732,14 +755,16 @@ export const orderDelivered = async(req,res)=>{
       const orderId = order._id.toString();
       const shopOrderId = shopOrder._id.toString();
       const userId = order.userId?._id?.toString() || order.userId?.toString?.();
-    const ownerId = shopOrder.owner?._id?.toString() || shopOrder.owner?.toString?.();
-    const deliveryBoyIdStr = deliveryBoyId ? deliveryBoyId.toString() : null;
+      const ownerId = shopOrder.owner?._id?.toString() || shopOrder.owner?.toString?.();
+      const deliveryBoyIdStr = deliveryBoyId ? deliveryBoyId.toString() : null;
       const payload = {
         orderId,
         shopOrderId,
         status: "delivered",
         assignmentId: null,
         assignedDeliveryBoy: null,
+        userId,
+        ownerId,
         message: "Order delivered"
       };
 
@@ -747,12 +772,17 @@ export const orderDelivered = async(req,res)=>{
 
       if (userId) {
         io.to(`user:${userId}`).emit("order:status", payload);
-        io.to(`user:${userId}`).emit("orders:refresh", { scope: "user", orderId });
+        const refreshPayload = { scope: "user", orderId, userId };
+        io.to(`user:${userId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (ownerId) {
+        console.log("Emitting order delivered for owner", { ownerId, orderId });
         io.to(`owner:${ownerId}`).emit("order:status", payload);
-        io.to(`owner:${ownerId}`).emit("orders:refresh", { scope: "owner", orderId });
+        const refreshPayload = { scope: "owner", orderId, ownerId };
+        io.to(`owner:${ownerId}`).emit("orders:refresh", refreshPayload);
+        io.emit("orders:refresh", refreshPayload);
       }
 
       if (deliveryBoyIdStr) {

@@ -40,14 +40,24 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
     try {
       const token = extractToken(socket);
       if (!token) {
+        console.warn("Socket auth failed: missing token", {
+          id: socket.id,
+          origin: socket.handshake?.headers?.origin,
+        });
         return next(new Error("Unauthorized"));
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.data.userId = decoded.userId;
       socket.data.role = decoded.role;
+      console.log("Socket authenticated", {
+        id: socket.id,
+        userId: socket.data.userId,
+        role: socket.data.role,
+      });
       return next();
     } catch (error) {
+      console.error("Socket auth error", error?.message || error);
       return next(new Error("Unauthorized"));
     }
   });
@@ -58,6 +68,8 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
       socket.disconnect(true);
       return;
     }
+
+    console.log("Socket connected", { id: socket.id, userId, role });
 
     socket.join(`user:${userId}`);
 
@@ -71,12 +83,18 @@ export const initSocketServer = (httpServer, allowedOrigins = []) => {
 
     socket.on("order:subscribe", (orderId) => {
       if (!orderId) return;
+      console.log("Socket subscribe order", { id: socket.id, orderId });
       socket.join(`order:${orderId}`);
     });
 
     socket.on("order:unsubscribe", (orderId) => {
       if (!orderId) return;
+      console.log("Socket unsubscribe order", { id: socket.id, orderId });
       socket.leave(`order:${orderId}`);
+    });
+
+    socket.on("disconnect", (reason) => {
+      console.log("Socket disconnected", { id: socket.id, userId, role, reason });
     });
   });
 
