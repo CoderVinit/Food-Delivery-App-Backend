@@ -1,5 +1,7 @@
 import DeliveryAssignment from "../models/deliveryAssignment.model.js";
+import Order from "../models/order.model.js";
 import User from "../models/user.model.js";
+import { getIO } from "../socket/socket.js";
 
 
 export const getCurrentUser = async (req, res) => {
@@ -31,6 +33,41 @@ export const updateUserLocation = async (req, res) => {
                 message: "User not found"
             });
         }
+
+        const io = getIO();
+        if (io && user.role === "deliveryBoy") {
+            const assignment = await DeliveryAssignment.findOne({
+                assignedTo: user._id,
+                status: { $in: ["assigned", "picked-up", "en-route"] }
+            }).lean();
+
+            if (assignment) {
+                const order = await Order.findById(assignment.order).select("userId shopOrder deliveryAddress").lean();
+                if (order) {
+                    const shopOrder = order.shopOrder?.find((so) => so._id.toString() === assignment.shopOrderId.toString());
+                    const userId = order.userId?.toString();
+                    const ownerId = shopOrder?.owner?.toString?.();
+                    const payload = {
+                        orderId: order._id.toString(),
+                        shopOrderId: assignment.shopOrderId.toString(),
+                        assignmentId: assignment._id.toString(),
+                        deliveryBoyId: user._id.toString(),
+                        location: { lat, long },
+                        deliveryAddress: order.deliveryAddress
+                    };
+
+                    io.to(`order:${payload.orderId}`).emit("delivery:location", payload);
+                    if (userId) {
+                        io.to(`user:${userId}`).emit("delivery:location", payload);
+                    }
+                    if (ownerId) {
+                        io.to(`owner:${ownerId}`).emit("delivery:location", payload);
+                    }
+                    io.to(`delivery:${payload.deliveryBoyId}`).emit("delivery:location", payload);
+                }
+            }
+        }
+
         res.status(200).json({
             success: true,
             message: "Location updated successfully",
